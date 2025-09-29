@@ -179,7 +179,7 @@ const PORT = process.env.PORT || 5050;
 (async () => {
   try {
     await connectDB(); // ✅ DB 연결을 기다림
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
       console.log(`Server listening on http://localhost:${PORT}`);
       console.log("REST:   GET  /api/health");
       console.log("REST:   GET  /api/photos");
