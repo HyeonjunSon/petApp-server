@@ -29,8 +29,6 @@ const Message = require("./models/Message");
 const app = express();
 const server = http.createServer(app);
 
-// ----- DB 연결 -----
-connectDB();
 
 // ----- 보안/공통 미들웨어 -----
 app.use(
