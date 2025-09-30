@@ -18,7 +18,8 @@ const userRoutes  = require("./routes/users");
 const petRoutes   = require("./routes/pets");
 const matchRoutes = require("./routes/matches");
 const walkRoutes  = require("./routes/walks");
-const photoRoutes = require("./routes/photos"); // ★ 추가
+const photoRoutes = require("./routes/photos");
+const reportsRouter= require('./routes/reports'); 
 const discoverRoutes = require("./routes/discover");
 const matchesLikeRoutes = require("./routes/matches-like");
 
@@ -49,9 +50,6 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
-// ----- 정적 서빙: 업로드 파일 공개 (/uploads/...) -----
-app.use("/uploads", express.static(path.join(__dirname, "uploads"))); // ★ 추가
-
 // ----- REST 라우트 -----
 app.use("/api/health", (_req, res) => res.json({ ok: true }));
 
@@ -63,6 +61,7 @@ app.use("/api/walks", walkRoutes);
 app.use("/api/photos", photoRoutes); // ★ 추가
 app.use("/api/discover", discoverRoutes);
 app.use("/api/matches", matchesLikeRoutes);
+app.use('/api/reports', reportsRouter);
 
 // ----- 로그아웃 (세션 사용 시) -----
 app.post("/auth/logout", (req, res) => {

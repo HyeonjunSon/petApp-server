@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const PhotoSchema = new mongoose.Schema(
   {
     url: { type: String, required: true },
+    publicId: String,
     type: { type: String, enum: ["owner_face", "pet", "other"], default: "other" },
   },
   { _id: false } // 굳이 서브도큐먼트 _id가 필요 없으면 옵션으로 끌 수 있어요

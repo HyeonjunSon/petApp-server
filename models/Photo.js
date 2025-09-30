@@ -8,7 +8,7 @@ const PhotoSchema = new Schema(
     fileName: { type: String, required: true },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true },
-    url: { type: String, required: true }, // e.g. /uploads/xxx.jpg
+    url: { type: String, required: true }, 
     type: {
       type: String,
       enum: ["owner_face", "pet", "other"], // 사진 종류 구분
