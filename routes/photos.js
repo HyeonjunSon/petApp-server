@@ -18,7 +18,15 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
     const ok = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/.test(file.mimetype);
-    cb(ok ? null : new multer.MulterError("LIMIT_UNEXPECTED_FILE", "이미지 파일만 업로드할 수 있습니다."), ok);
+    cb(
+      ok
+        ? null
+        : new multer.MulterError(
+            "LIMIT_UNEXPECTED_FILE",
+            "이미지 파일만 업로드할 수 있습니다."
+          ),
+      ok
+    );
   },
 });
 
@@ -43,7 +51,8 @@ const uploadToCloudinary = (buffer, opts = {}) =>
  */
 router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "photo 파일이 필요합니다." });
+    if (!req.file)
+      return res.status(400).json({ message: "photo 파일이 필요합니다." });
 
     const rawType = (req.body.type || "").trim();
     const type = ALLOW_TYPES.has(rawType) ? rawType : "other";
@@ -51,6 +60,10 @@ router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
 
     // Cloudinary 업로드
     const r = await uploadToCloudinary(req.file.buffer);
+    const fileName =
+      req.file.originalname ||
+      r.original_filename ||
+      new URL(r.secure_url).pathname.split("/").pop();
 
     // DB: Photo 문서 저장 (publicId 보관!)
     const photo = await Photo.create({
@@ -58,10 +71,10 @@ router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      url: r.secure_url,           // Cloudinary 공개 URL
-      publicId: r.public_id,       // 삭제/교체용
+      url: r.secure_url, // Cloudinary 공개 URL
+      publicId: r.public_id, // 삭제/교체용
       type,
-      // local fileName 등은 더 이상 필요 없음
+      fileName, 
     });
 
     // User.photos 반영 (필요시)
@@ -73,7 +86,12 @@ router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
 
     return res.status(201).json({
       ok: true,
-      photo: { _id: photo._id, url: photo.url, publicId: photo.publicId, type: photo.type },
+      photo: {
+        _id: photo._id,
+        url: photo.url,
+        publicId: photo.publicId,
+        type: photo.type,
+      },
     });
   } catch (e) {
     console.error("PHOTO UPLOAD ERROR:", e);
@@ -104,12 +122,20 @@ router.get("/", requireAuth, async (req, res) => {
  */
 router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const doc = await Photo.findOne({ _id: req.params.id, owner: getUserId(req) });
-    if (!doc) return res.status(404).json({ message: "대상을 찾을 수 없거나 권한이 없습니다." });
+    const doc = await Photo.findOne({
+      _id: req.params.id,
+      owner: getUserId(req),
+    });
+    if (!doc)
+      return res
+        .status(404)
+        .json({ message: "대상을 찾을 수 없거나 권한이 없습니다." });
 
     // Cloudinary에서 삭제
     if (doc.publicId) {
-      try { await cloudinary.uploader.destroy(doc.publicId); } catch (_) {}
+      try {
+        await cloudinary.uploader.destroy(doc.publicId);
+      } catch (_) {}
     }
 
     // User.photos에서도 제거
