@@ -79,7 +79,8 @@ const corsDelegate = cors({
 
 app.use(corsDelegate);
 // 모든 경로 프리플라이트 확실 응답(204)
-app.options("*", corsDelegate);
+app.options(/.*/, cors(corsOptions));
+
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
