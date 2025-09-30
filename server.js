@@ -38,36 +38,22 @@ app.use(
   })
 );
 
-// ---------- CORS (프리뷰/프로덕션/로컬 허용) ----------
-const allowlist = (process.env.CORS_ORIGIN || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// ---------- CORS (단일 도메인만 허용) ----------
+const ALLOWED_ORIGIN = process.env.CORS_ORIGIN; // 예: https://pet-app-frontend-fawn.vercel.app
 
-const allowRegex = process.env.CORS_ORIGIN_REGEX
-  ? [new RegExp(process.env.CORS_ORIGIN_REGEX)]
-  : [];
-
-// ex) Heroku Config Vars 예시
-// CORS_ORIGIN=https://pet-app-frontend-fawn.vercel.app,http://localhost:3000
-// CORS_ORIGIN_REGEX=^https:\/\/pet-app-frontend-.*\.vercel\.app$
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    // 서버-서버 호출(헬스체크 등)로 Origin이 없을 수 있음 → 허용
-    if (!origin) return callback(null, true);
-    const ok =
-      allowlist.includes(origin) || allowRegex.some((re) => re.test(origin));
-    return callback(ok ? null : new Error("CORS blocked: " + origin), ok);
-  },
+app.use(cors({
+  origin: ALLOWED_ORIGIN,
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+}));
 
-app.use(cors(corsOptions));
-// 프리플라이트 대응
-app.options("*", cors(corsOptions));
+// 프리플라이트
+app.options("*", cors({
+  origin: ALLOWED_ORIGIN,
+  credentials: true,
+}));
+
 
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
@@ -100,17 +86,13 @@ app.post("/api/auth/logout", (req, res) => {
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      const ok =
-        allowlist.includes(origin) || allowRegex.some((re) => re.test(origin));
-      return callback(ok ? null : new Error("CORS blocked: " + origin), ok);
-    },
+    origin: ALLOWED_ORIGIN,
     credentials: true,
-    methods: ["GET", "POST"],
+    methods: ["GET","POST"],
     allowedHeaders: ["Authorization"],
   },
 });
+
 
 // room-2 같은 문자열을 실제 Match ObjectId로 정규화
 async function normalizeMatchId(id) {
