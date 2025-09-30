@@ -35,7 +35,7 @@ app.set("trust proxy", 1);
 app.use(
   helmet({
     crossOriginResourcePolicy: false, // 정적 파일(CDN/이미지) 허용
-    contentSecurityPolicy: false,     // (프로덕션 전환 시 별도 CSP 구성 권장)
+    contentSecurityPolicy: false, // (프로덕션 전환 시 별도 CSP 구성 권장)
     crossOriginEmbedderPolicy: false,
   })
 );
@@ -48,7 +48,9 @@ const parseOrigins = (raw) =>
     .filter(Boolean);
 
 // Heroku Config Vars: CORS_ORIGINS(권장) 또는 CORS_ORIGIN(레거시)
-const ALLOW_LIST = parseOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN);
+const ALLOW_LIST = parseOrigins(
+  process.env.CORS_ORIGINS || process.env.CORS_ORIGIN
+);
 
 // 와일드카드 패턴 허용 검사 (예: https://pet-app-frontend-*.vercel.app)
 const isAllowedOrigin = (origin) => {
@@ -57,7 +59,9 @@ const isAllowedOrigin = (origin) => {
   // 패턴 매칭
   return ALLOW_LIST.some((pat) => {
     if (!pat.includes("*")) return false;
-    const re = new RegExp("^" + pat.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+    const re = new RegExp(
+      "^" + pat.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$"
+    );
     return re.test(origin);
   });
 };
@@ -81,7 +85,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 // ----- 정적 서빙 (업로드 이미지) -----
-app.use("/uploads", express.static(path.join(__dirname, "uploads"), { maxAge: "7d" }));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), { maxAge: "7d" })
+);
 
 // ---------- HEALTH ----------
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -144,7 +151,9 @@ io.on("connection", (socket) => {
       }
 
       // 기존 match:* 룸 떠나고 새 룸 합류
-      [...socket.rooms].filter((r) => r.startsWith("match:")).forEach((r) => socket.leave(r));
+      [...socket.rooms]
+        .filter((r) => r.startsWith("match:"))
+        .forEach((r) => socket.leave(r));
       socket.join(`match:${realId}`);
       socket.emit("joined", { matchId: realId });
     } catch (e) {
@@ -155,10 +164,16 @@ io.on("connection", (socket) => {
   socket.on("message", async ({ matchId, text, clientTempId, from }, ack) => {
     try {
       const realId = await normalizeMatchId(matchId);
-      if (!realId || !text?.trim()) return typeof ack === "function" && ack({ ok: false, error: "bad payload" });
+      if (!realId || !text?.trim())
+        return (
+          typeof ack === "function" && ack({ ok: false, error: "bad payload" })
+        );
 
       const senderId = userId || from;
-      if (!senderId) return typeof ack === "function" && ack({ ok: false, error: "unauthorized" });
+      if (!senderId)
+        return (
+          typeof ack === "function" && ack({ ok: false, error: "unauthorized" })
+        );
 
       const msg = await Message.create({
         match: realId,
@@ -177,7 +192,8 @@ io.on("connection", (socket) => {
         createdAt: msg.createdAt,
       };
 
-      if (typeof ack === "function") ack({ ok: true, serverId: payload._id, clientTempId });
+      if (typeof ack === "function")
+        ack({ ok: true, serverId: payload._id, clientTempId });
       io.to(`match:${realId}`).emit("message", payload);
     } catch (e) {
       console.error("message error:", e);
