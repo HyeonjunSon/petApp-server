@@ -30,6 +30,7 @@ const Message = require("./models/Message");
 const app = express();
 const server = http.createServer(app);
 
+console.log("CORS_BUILD_MARK v1.1"); // 실행 파일 확인용 마킹
 // ---------- 보안/공통 ----------
 app.set("trust proxy", 1);
 app.use(
@@ -137,7 +138,7 @@ async function normalizeMatchId(id) {
 io.on("connection", (socket) => {
   const userId = socket.user?._id?.toString?.();
   console.log("socket connected:", socket.id, userId ? `(user:${userId})` : "");
-  console.log("CORS_BUILD_MARK v1.1"); // 실행 파일 확인용 마킹
+
 
   if (userId) socket.join(`user:${userId}`);
 
