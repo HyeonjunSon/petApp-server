@@ -34,26 +34,52 @@ const server = http.createServer(app);
 app.use(
   helmet({
     crossOriginResourcePolicy: false, // 정적 파일 서빙 허용
-    contentSecurityPolicy: false,     // dev 간소화 (prod에서는 CSP 구성 권장)
+    contentSecurityPolicy: false,     // prod에서는 CSP 구성 권장
   })
 );
 
-// ---------- CORS (단일 도메인만 허용) ----------
-const ALLOWED_ORIGIN = process.env.CORS_ORIGIN; // 예: https://pet-app-frontend-fawn.vercel.app
+// ---------- CORS (여러 도메인 + 와일드카드 *.vercel.app 허용) ----------
+const parseOrigins = (raw) =>
+  (raw || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-app.use(cors({
-  origin: ALLOWED_ORIGIN,
-  credentials: true,
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-}));
+// 환경변수: CORS_ORIGINS 우선, 없으면 CORS_ORIGIN 사용
+const ALLOW_LIST = parseOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN);
+
+// 와일드카드 패턴 허용 검사 (예: https://pet-app-frontend-*.vercel.app)
+const isAllowedOrigin = (origin) => {
+  if (!origin) return false;
+  if (ALLOW_LIST.includes(origin)) return true; // 완전 일치
+  // 패턴 매칭
+  return ALLOW_LIST.some((pat) => {
+    if (!pat.includes("*")) return false;
+    const re = new RegExp("^" + pat.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+    return re.test(origin);
+  });
+};
+
+// 디버그용(원하면 주석 처리)
+console.log("CORS allow list:", ALLOW_LIST);
+
+app.use(
+  cors({
+    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 // 프리플라이트
-app.options("*", cors({
-  origin: ALLOWED_ORIGIN,
-  credentials: true,
-}));
-
+app.options(
+  "*",
+  cors({
+    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
@@ -86,9 +112,9 @@ app.post("/api/auth/logout", (req, res) => {
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: ALLOWED_ORIGIN,
+    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
     credentials: true,
-    methods: ["GET","POST"],
+    methods: ["GET", "POST"],
     allowedHeaders: ["Authorization"],
   },
 });
