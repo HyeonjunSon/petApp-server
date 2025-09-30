@@ -10,73 +10,105 @@ const morgan = require("morgan");
 const { Server } = require("socket.io");
 const { isValidObjectId } = require("mongoose");
 
-const connectDB   = require("./config/db");
+const connectDB = require("./config/db");
 
 // REST 라우트
-const authRoutes  = require("./routes/auth");
-const userRoutes  = require("./routes/users");
-const petRoutes   = require("./routes/pets");
+const authRoutes = require("./routes/auth");
+const userRoutes = require("./routes/users");
+const petRoutes = require("./routes/pets");
 const matchRoutes = require("./routes/matches");
-const walkRoutes  = require("./routes/walks");
+const walkRoutes = require("./routes/walks");
 const photoRoutes = require("./routes/photos");
-const reportsRouter= require('./routes/reports'); 
+const reportsRouter = require("./routes/reports");
 const discoverRoutes = require("./routes/discover");
 const matchesLikeRoutes = require("./routes/matches-like");
 
-// 채팅에 필요한 모델
-const Match   = require("./models/Match");
+// 채팅 모델
+const Match = require("./models/Match");
 const Message = require("./models/Message");
 
 const app = express();
 const server = http.createServer(app);
 
-
-// ----- 보안/공통 미들웨어 -----
+// ---------- 보안/공통 ----------
 app.use(
   helmet({
-    crossOriginResourcePolicy: false,   // 정적 파일 서빙 편의
-    contentSecurityPolicy: false,       // dev 간소화 (prod에서는 적절히 설정)
+    crossOriginResourcePolicy: false, // 정적 파일 서빙 허용
+    contentSecurityPolicy: false,     // dev 간소화 (prod에서는 CSP 구성 권장)
   })
 );
 
-// CORS: 필요에 맞춰 수정
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    credentials: true, // 토큰/쿠키를 쓸 경우 true 권장
-  })
-);
+// ---------- CORS (프리뷰/프로덕션/로컬 허용) ----------
+const allowlist = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const allowRegex = process.env.CORS_ORIGIN_REGEX
+  ? [new RegExp(process.env.CORS_ORIGIN_REGEX)]
+  : [];
+
+// ex) Heroku Config Vars 예시
+// CORS_ORIGIN=https://pet-app-frontend-fawn.vercel.app,http://localhost:3000
+// CORS_ORIGIN_REGEX=^https:\/\/pet-app-frontend-.*\.vercel\.app$
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // 서버-서버 호출(헬스체크 등)로 Origin이 없을 수 있음 → 허용
+    if (!origin) return callback(null, true);
+    const ok =
+      allowlist.includes(origin) || allowRegex.some((re) => re.test(origin));
+    return callback(ok ? null : new Error("CORS blocked: " + origin), ok);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+// 프리플라이트 대응
+app.options("*", cors(corsOptions));
 
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
-// ----- REST 라우트 -----
-app.use("/api/health", (_req, res) => res.json({ ok: true }));
+// ----- 정적 서빙 (업로드 이미지) -----
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ---------- REST 라우트 ----------
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/pets",  petRoutes);
+app.use("/api/pets", petRoutes);
 app.use("/api/matches", matchRoutes);
+app.use("/api/matches/likes", matchesLikeRoutes); // ★ 경로 분리
 app.use("/api/walks", walkRoutes);
-app.use("/api/photos", photoRoutes); // ★ 추가
+app.use("/api/photos", photoRoutes);
 app.use("/api/discover", discoverRoutes);
-app.use("/api/matches", matchesLikeRoutes);
-app.use('/api/reports', reportsRouter);
+app.use("/api/reports", reportsRouter);
 
-// ----- 로그아웃 (세션 사용 시) -----
-app.post("/auth/logout", (req, res) => {
+// ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
+app.post("/api/auth/logout", (req, res) => {
   req.session?.destroy?.(() => {
     res.clearCookie?.("sid");
     res.json({ ok: true });
   }) || res.json({ ok: true });
 });
 
-// ----- Socket.IO -----
+// ---------- Socket.IO ----------
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const ok =
+        allowlist.includes(origin) || allowRegex.some((re) => re.test(origin));
+      return callback(ok ? null : new Error("CORS blocked: " + origin), ok);
+    },
     credentials: true,
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Authorization"],
   },
 });
 
@@ -104,7 +136,10 @@ io.on("connection", (socket) => {
         if (!ok) return;
       }
 
-      [...socket.rooms].filter((r) => r.startsWith("match:")).forEach((r) => socket.leave(r));
+      [...socket.rooms]
+        .filter((r) => r.startsWith("match:"))
+        .forEach((r) => socket.leave(r));
+
       socket.join(`match:${realId}`);
       socket.emit("joined", { matchId: realId });
     } catch (e) {
@@ -165,17 +200,17 @@ io.on("connection", (socket) => {
   });
 });
 
-// ----- 에러 핸들러 -----
+// ---------- 에러 핸들러 ----------
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || "Server error" });
 });
 
-// ----- 서버 시작 -----
+// ---------- 서버 시작 ----------
 const PORT = process.env.PORT || 5050;
 (async () => {
   try {
-    await connectDB(); // ✅ DB 연결을 기다림
+    await connectDB();
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`Server listening on http://localhost:${PORT}`);
       console.log("REST:   GET  /api/health");
@@ -187,6 +222,5 @@ const PORT = process.env.PORT || 5050;
     process.exit(1);
   }
 })();
-
 
 module.exports = { app, server, io };

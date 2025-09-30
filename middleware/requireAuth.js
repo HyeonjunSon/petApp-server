@@ -19,7 +19,7 @@ module.exports = (req, res, next) => {
 
     if (!uid) return res.status(401).json({ message: "Invalid token payload" });
 
-    // ✅ 둘 다 세팅해서 호환성 유지
+    //  둘 다 세팅해서 호환성 유지
     req.userId = uid;
     req.user = { _id: uid };
 
