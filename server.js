@@ -31,10 +31,12 @@ const app = express();
 const server = http.createServer(app);
 
 // ---------- 보안/공통 ----------
+app.set("trust proxy", 1);
 app.use(
   helmet({
-    crossOriginResourcePolicy: false, // 정적 파일 서빙 허용
-    contentSecurityPolicy: false,     // prod에서는 CSP 구성 권장
+    crossOriginResourcePolicy: false, // 정적 파일(CDN/이미지) 허용
+    contentSecurityPolicy: false,     // (프로덕션 전환 시 별도 CSP 구성 권장)
+    crossOriginEmbedderPolicy: false,
   })
 );
 
@@ -45,7 +47,7 @@ const parseOrigins = (raw) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-// 환경변수: CORS_ORIGINS 우선, 없으면 CORS_ORIGIN 사용
+// Heroku Config Vars: CORS_ORIGINS(권장) 또는 CORS_ORIGIN(레거시)
 const ALLOW_LIST = parseOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN);
 
 // 와일드카드 패턴 허용 검사 (예: https://pet-app-frontend-*.vercel.app)
@@ -60,41 +62,36 @@ const isAllowedOrigin = (origin) => {
   });
 };
 
-// 디버그용(원하면 주석 처리)
-console.log("CORS allow list:", ALLOW_LIST);
+// 디버그(원하면 주석 처리 가능)
+console.log("[CORS] allow list =", ALLOW_LIST);
 
-app.use(
-  cors({
-    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+const corsDelegate = cors({
+  origin: (origin, cb) => cb(null, !!origin && isAllowedOrigin(origin)),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
 
-// 프리플라이트
-app.options(
-  "*",
-  cors({
-    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
-    credentials: true,
-  })
-);
+app.use(corsDelegate);
+// 모든 경로 프리플라이트 확실 응답(204)
+app.options("*", corsDelegate);
 
 app.use(express.json({ limit: "10mb" }));
-app.use(morgan("dev"));
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 // ----- 정적 서빙 (업로드 이미지) -----
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads"), { maxAge: "7d" }));
 
-// ---------- REST 라우트 ----------
+// ---------- HEALTH ----------
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
+// ---------- REST 라우트 ----------
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/pets", petRoutes);
 app.use("/api/matches", matchRoutes);
-app.use("/api/matches/likes", matchesLikeRoutes); // ★ 경로 분리
+app.use("/api/matches/likes", matchesLikeRoutes); // 경로 분리 유지
 app.use("/api/walks", walkRoutes);
 app.use("/api/photos", photoRoutes);
 app.use("/api/discover", discoverRoutes);
@@ -102,24 +99,27 @@ app.use("/api/reports", reportsRouter);
 
 // ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
 app.post("/api/auth/logout", (req, res) => {
-  req.session?.destroy?.(() => {
-    res.clearCookie?.("sid");
+  if (req.session && typeof req.session.destroy === "function") {
+    req.session.destroy(() => {
+      if (typeof res.clearCookie === "function") res.clearCookie("sid");
+      res.json({ ok: true });
+    });
+  } else {
     res.json({ ok: true });
-  }) || res.json({ ok: true });
+  }
 });
 
 // ---------- Socket.IO ----------
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: (origin, cb) => cb(null, origin && isAllowedOrigin(origin)),
+    origin: (origin, cb) => cb(null, !!origin && isAllowedOrigin(origin)),
     credentials: true,
     methods: ["GET", "POST"],
     allowedHeaders: ["Authorization"],
   },
 });
 
-// room-2 같은 문자열을 실제 Match ObjectId로 정규화
 async function normalizeMatchId(id) {
   if (!id) return null;
   if (isValidObjectId(id)) return id;
@@ -143,10 +143,8 @@ io.on("connection", (socket) => {
         if (!ok) return;
       }
 
-      [...socket.rooms]
-        .filter((r) => r.startsWith("match:"))
-        .forEach((r) => socket.leave(r));
-
+      // 기존 match:* 룸 떠나고 새 룸 합류
+      [...socket.rooms].filter((r) => r.startsWith("match:")).forEach((r) => socket.leave(r));
       socket.join(`match:${realId}`);
       socket.emit("joined", { matchId: realId });
     } catch (e) {
@@ -157,16 +155,10 @@ io.on("connection", (socket) => {
   socket.on("message", async ({ matchId, text, clientTempId, from }, ack) => {
     try {
       const realId = await normalizeMatchId(matchId);
-      if (!realId || !text?.trim()) {
-        if (typeof ack === "function") ack({ ok: false, error: "bad payload" });
-        return;
-      }
+      if (!realId || !text?.trim()) return typeof ack === "function" && ack({ ok: false, error: "bad payload" });
 
       const senderId = userId || from;
-      if (!senderId) {
-        if (typeof ack === "function") ack({ ok: false, error: "unauthorized" });
-        return;
-      }
+      if (!senderId) return typeof ack === "function" && ack({ ok: false, error: "unauthorized" });
 
       const msg = await Message.create({
         match: realId,
@@ -185,10 +177,7 @@ io.on("connection", (socket) => {
         createdAt: msg.createdAt,
       };
 
-      if (typeof ack === "function") {
-        ack({ ok: true, serverId: payload._id, clientTempId });
-      }
-
+      if (typeof ack === "function") ack({ ok: true, serverId: payload._id, clientTempId });
       io.to(`match:${realId}`).emit("message", payload);
     } catch (e) {
       console.error("message error:", e);
@@ -208,6 +197,10 @@ io.on("connection", (socket) => {
 });
 
 // ---------- 에러 핸들러 ----------
+app.use((req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || "Server error" });
