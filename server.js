@@ -30,7 +30,6 @@ const Message = require("./models/Message");
 const app = express();
 const server = http.createServer(app);
 
-console.log("CORS_BUILD_MARK v1.1"); // 실행 파일 확인용 마킹
 // ---------- 보안/공통 ----------
 app.set("trust proxy", 1);
 app.use(
@@ -55,9 +54,9 @@ const ALLOW_LIST = parseOrigins(
 
 // 와일드카드 패턴 허용 검사 (예: https://pet-app-frontend-*.vercel.app)
 const isAllowedOrigin = (origin) => {
-  if (!origin) return false;
+  if (!origin) return true; // ★ 서버-서버/모바일 앱/포스트맨 등 Origin 없는 요청 허용
   if (ALLOW_LIST.includes(origin)) return true; // 완전 일치
-  // 패턴 매칭
+  // 와일드카드 패턴 매칭
   return ALLOW_LIST.some((pat) => {
     if (!pat.includes("*")) return false;
     const re = new RegExp(
@@ -67,20 +66,31 @@ const isAllowedOrigin = (origin) => {
   });
 };
 
-// 디버그(원하면 주석 처리 가능)
+// 디버그
 console.log("[CORS] allow list =", ALLOW_LIST);
 
-const corsDelegate = cors({
-  origin: (origin, cb) => cb(null, !!origin && isAllowedOrigin(origin)),
+// ✅ 공용 옵션 객체 (이걸로 use/options 둘 다)
+const corsOptions = {
+  origin(origin, cb) {
+    try {
+      const ok = isAllowedOrigin(origin);
+      cb(null, ok);
+    } catch (e) {
+      cb(e);
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-});
+  exposedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+};
 
-app.use(corsDelegate);
-// 모든 경로 프리플라이트 확실 응답(204)
-app.options(/.*/, cors(corsOptions));
+const corsMw = cors(corsOptions);
 
+app.use(corsMw);
+// 모든 경로 프리플라이트 확실 응답(204)  ← ★ 여기서 undefined 참조 없도록 corsMw 사용
+app.options(/.*/, corsMw);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -139,7 +149,6 @@ async function normalizeMatchId(id) {
 io.on("connection", (socket) => {
   const userId = socket.user?._id?.toString?.();
   console.log("socket connected:", socket.id, userId ? `(user:${userId})` : "");
-
 
   if (userId) socket.join(`user:${userId}`);
 
