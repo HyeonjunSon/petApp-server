@@ -7,9 +7,6 @@ const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const { Server } = require("socket.io");
-const { isValidObjectId } = require("mongoose");
-
 const connectDB = require("./config/db");
 
 // REST 라우트
@@ -23,9 +20,7 @@ const reportsRouter = require("./routes/reports");
 const discoverRoutes = require("./routes/discover");
 const matchesLikeRoutes = require("./routes/matches-like");
 
-// 채팅 모델
-const Match = require("./models/Match");
-const Message = require("./models/Message");
+const { initSocket } = require("./socket");
 
 const app = express();
 const server = http.createServer(app);
@@ -128,101 +123,14 @@ app.post("/api/auth/logout", (req, res) => {
   }
 });
 
-// ---------- Socket.IO ----------
-const io = new Server(server, {
-  path: "/socket.io",
-  cors: {
-    origin: (origin, cb) => cb(null, !!origin && isAllowedOrigin(origin)),
-    credentials: true,
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Authorization"],
-  },
-});
-
-async function normalizeMatchId(id) {
-  if (!id) return null;
-  if (isValidObjectId(id)) return id;
-  const m = await Match.findOne({ roomId: id }).select("_id");
-  return m ? m._id.toString() : null;
-}
-
-io.on("connection", (socket) => {
-  const userId = socket.user?._id?.toString?.();
-  console.log("socket connected:", socket.id, userId ? `(user:${userId})` : "");
-
-  if (userId) socket.join(`user:${userId}`);
-
-  socket.on("join", async ({ matchId }) => {
-    try {
-      const realId = await normalizeMatchId(matchId);
-      if (!realId) return;
-
-      if (userId) {
-        const ok = await Match.exists({ _id: realId, users: userId });
-        if (!ok) return;
-      }
-
-      // 기존 match:* 룸 떠나고 새 룸 합류
-      [...socket.rooms]
-        .filter((r) => r.startsWith("match:"))
-        .forEach((r) => socket.leave(r));
-      socket.join(`match:${realId}`);
-      socket.emit("joined", { matchId: realId });
-    } catch (e) {
-      console.error("join error:", e.message);
-    }
-  });
-
-  socket.on("message", async ({ matchId, text, clientTempId, from }, ack) => {
-    try {
-      const realId = await normalizeMatchId(matchId);
-      if (!realId || !text?.trim())
-        return (
-          typeof ack === "function" && ack({ ok: false, error: "bad payload" })
-        );
-
-      const senderId = userId || from;
-      if (!senderId)
-        return (
-          typeof ack === "function" && ack({ ok: false, error: "unauthorized" })
-        );
-
-      const msg = await Message.create({
-        match: realId,
-        from: senderId,
-        text: text.trim(),
-        readBy: [senderId],
-      });
-
-      await Match.findByIdAndUpdate(realId, { lastMessage: msg._id });
-
-      const payload = {
-        _id: msg._id.toString(),
-        match: realId,
-        from: senderId,
-        text: msg.text,
-        createdAt: msg.createdAt,
-      };
-
-      if (typeof ack === "function")
-        ack({ ok: true, serverId: payload._id, clientTempId });
-      io.to(`match:${realId}`).emit("message", payload);
-    } catch (e) {
-      console.error("message error:", e);
-      if (typeof ack === "function") ack({ ok: false, error: e.message });
-    }
-  });
-
-  socket.on("typing", async ({ matchId, isTyping }) => {
-    const realId = await normalizeMatchId(matchId);
-    if (!realId) return;
-    io.to(`match:${realId}`).emit("typing", { userId, isTyping: !!isTyping });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("socket disconnected:", socket.id);
-  });
-});
+const io = initSocket(
+  server,
+  // CORS 검사: 기존 isAllowedOrigin 재사용
+  (origin, cb) => {
+    try { cb(null, isAllowedOrigin(origin)); }
+    catch (e) { cb(e); }
+  }
+);
 
 // ---------- 에러 핸들러 ----------
 app.use((req, res) => {
@@ -244,6 +152,7 @@ const PORT = process.env.PORT || 5050;
       console.log("REST:   GET  /api/health");
       console.log("REST:   GET  /api/photos");
       console.log("Socket: ws   /socket.io");
+      console.log("Socket.IO ready on /socket.io");
     });
   } catch (err) {
     console.error("MongoDB connection error on boot:", err);
