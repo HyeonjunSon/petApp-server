@@ -8,6 +8,25 @@ const User = require("../models/User");
 
 const SALT_ROUNDS = 10;
 
+/* ---------------- Cloudinary 업로드 준비 ---------------- */
+const multer = require("multer");
+const cloudinary = require("../cloudinary"); // server/cloudinary.js (cloud_name, api_key, api_secret 설정)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const ok = /image\/(png|jpe?g|webp)/.test(file.mimetype);
+    cb(ok ? null : new Error("이미지 파일만 업로드 가능합니다."), ok);
+  },
+});
+/* ------------------------------------------------------ */
+
+// req.user 혹은 req.userId 어떤 미들웨어든 대응
+function getUserId(req) {
+  // req.user가 객체면 _id 사용, 아니면 req.userId 사용
+  return (req.user && (req.user._id || req.user.id)) || req.userId;
+}
+
 /**
  * 회원가입
  * POST /api/users/register
@@ -103,12 +122,9 @@ router.post("/logout", (_req, res) => {
   return res.json({ ok: true });
 });
 
-
-
 /**
- * 내 프로필 수정
+ * 내 프로필 수정 (소수 필드)
  * PATCH /api/users/update
- * Authorization: Bearer <token>
  */
 router.patch("/update", requireAuth, async (req, res, next) => {
   try {
@@ -124,7 +140,7 @@ router.patch("/update", requireAuth, async (req, res, next) => {
       }
     }
 
-    const updated = await User.findByIdAndUpdate(req.user._id, updateFields, {
+    const updated = await User.findByIdAndUpdate(getUserId(req), updateFields, {
       new: true,
     }).lean();
 
@@ -144,9 +160,8 @@ router.patch("/update", requireAuth, async (req, res, next) => {
 });
 
 /**
- * 비밀번호 변경 (선택)
+ * 비밀번호 변경
  * POST /api/users/change-password
- * body: { currentPassword, newPassword }
  */
 router.post("/change-password", requireAuth, async (req, res, next) => {
   try {
@@ -157,7 +172,7 @@ router.post("/change-password", requireAuth, async (req, res, next) => {
         .json({ message: "currentPassword & newPassword required" });
     }
 
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(getUserId(req));
     if (!user) return res.status(404).json({ message: "사용자 없음" });
 
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
@@ -175,9 +190,13 @@ router.post("/change-password", requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * 내 정보 조회
+ * GET /api/users/me
+ */
 router.get("/me", requireAuth, async (req, res, next) => {
   try {
-    const me = await User.findById(req.userId).lean();
+    const me = await User.findById(getUserId(req)).lean();
     if (!me) return res.status(404).json({ message: "User not found" });
     res.json(me);
   } catch (err) {
@@ -185,8 +204,10 @@ router.get("/me", requireAuth, async (req, res, next) => {
   }
 });
 
-
-// 내 프로필 수정
+/**
+ * 내 프로필 수정 (확장)
+ * PUT /api/users/me
+ */
 router.put("/me", requireAuth, async (req, res, next) => {
   try {
     const { name, about, goal, interests, phone, birthYear } = req.body;
@@ -200,7 +221,7 @@ router.put("/me", requireAuth, async (req, res, next) => {
     if (birthYear !== undefined) update.birthYear = birthYear;
 
     const me = await User.findByIdAndUpdate(
-      req.userId,
+      getUserId(req),
       { $set: update },
       { new: true }
     ).lean();
@@ -212,5 +233,80 @@ router.put("/me", requireAuth, async (req, res, next) => {
   }
 });
 
+/* ====================== Cloudinary 업로드/삭제 ====================== */
+/**
+ * 사진 업로드 (Cloudinary)
+ * POST /api/users/me/photo
+ * form-data: photo=<File>, type=owner_face|pet (optional, default "pet")
+ */
+router.post(
+  "/me/photo",
+  requireAuth,
+  upload.single("photo"),
+  async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "파일 없음" });
+
+      const { type = "pet" } = req.body;
+
+      // Cloudinary 업로드 (메모리 버퍼 사용)
+      const streamUpload = () =>
+        new Promise((resolve, reject) => {
+          const s = cloudinary.uploader.upload_stream(
+            {
+              folder: "petdate",
+              resource_type: "image",
+              transformation: [{ width: 1600, crop: "limit" }], // 과대 이미지 제한
+            },
+            (err, result) => (err ? reject(err) : resolve(result))
+          );
+          s.end(req.file.buffer);
+        });
+
+      const r = await streamUpload(); // { secure_url, public_id, ... }
+      const uid = getUserId(req);
+
+      // DB에 추가
+      const me = await User.findById(uid);
+      if (!me) return res.status(404).json({ message: "User not found" });
+
+      me.photos = me.photos || [];
+      me.photos.push({
+        url: r.secure_url,
+        publicId: r.public_id,
+        type,
+      });
+      await me.save();
+
+      return res.json({ url: r.secure_url, publicId: r.public_id, type });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * 사진 삭제 (Cloudinary + DB)
+ * DELETE /api/users/me/photo/:publicId
+ */
+router.delete("/me/photo/:publicId", requireAuth, async (req, res, next) => {
+  try {
+    const { publicId } = req.params;
+
+    // Cloudinary에서 삭제
+    await cloudinary.uploader.destroy(publicId);
+
+    // DB에서 제거
+    await User.updateOne(
+      { _id: getUserId(req) },
+      { $pull: { photos: { publicId } } }
+    );
+
+    return res.sendStatus(204);
+  } catch (err) {
+    next(err);
+  }
+});
+/* ================================================================== */
 
 module.exports = router;
