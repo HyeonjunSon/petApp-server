@@ -23,7 +23,7 @@ const upload = multer({
         ? null
         : new multer.MulterError(
             "LIMIT_UNEXPECTED_FILE",
-            "이미지 파일만 업로드할 수 있습니다."
+            "Only image files are allowed."
           ),
       ok
     );
@@ -52,7 +52,7 @@ const uploadToCloudinary = (buffer, opts = {}) =>
 router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
   try {
     if (!req.file)
-      return res.status(400).json({ message: "photo 파일이 필요합니다." });
+      return res.status(400).json({ message: "A photo file is required." });
 
     const rawType = (req.body.type || "").trim();
     const type = ALLOW_TYPES.has(rawType) ? rawType : "other";
@@ -97,10 +97,10 @@ router.post("/", requireAuth, upload.single("photo"), async (req, res) => {
     console.error("PHOTO UPLOAD ERROR:", e);
     if (e instanceof multer.MulterError) {
       if (e.code === "LIMIT_FILE_SIZE")
-        return res.status(400).json({ message: "파일 용량(10MB) 초과" });
-      return res.status(400).json({ message: e.message || "업로드 실패" });
+        return res.status(400).json({ message: "File exceeds the 10MB limit" });
+      return res.status(400).json({ message: e.message || "Upload failed" });
     }
-    return res.status(500).json({ message: "업로드 실패" });
+    return res.status(500).json({ message: "Upload failed" });
   }
 });
 
@@ -129,7 +129,7 @@ router.delete("/:id", requireAuth, async (req, res) => {
     if (!doc)
       return res
         .status(404)
-        .json({ message: "대상을 찾을 수 없거나 권한이 없습니다." });
+        .json({ message: "Target not found or permission denied." });
 
     // Cloudinary에서 삭제
     if (doc.publicId) {
@@ -149,7 +149,7 @@ router.delete("/:id", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("PHOTO DELETE ERROR:", e);
-    res.status(500).json({ message: "삭제 실패" });
+    res.status(500).json({ message: "Failed to delete" });
   }
 });
 

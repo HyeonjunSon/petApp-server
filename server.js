@@ -19,6 +19,10 @@ const photoRoutes = require("./routes/photos");
 const reportsRouter = require("./routes/reports");
 const discoverRoutes = require("./routes/discover");
 const matchesLikeRoutes = require("./routes/matches-like");
+const blocksRoutes = require("./routes/blocks");
+const settingsRoutes = require("./routes/settings");
+const accountRoutes = require("./routes/account");
+const walkInvitesRoutes = require("./routes/walk-invites");
 
 const { initSocket } = require("./socket");
 
@@ -105,11 +109,15 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/pets", petRoutes);
 app.use("/api/matches", matchRoutes);
-app.use("/api/matches/likes", matchesLikeRoutes); // 경로 분리 유지
+app.use("/api/matches", matchesLikeRoutes); // like/:id, pass/:id (프론트 경로와 일치)
 app.use("/api/walks", walkRoutes);
 app.use("/api/photos", photoRoutes);
 app.use("/api/discover", discoverRoutes);
 app.use("/api/reports", reportsRouter);
+app.use("/api/blocks", blocksRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/account", accountRoutes);
+app.use("/api", walkInvitesRoutes); // mounts /matches/:id/walk-invite, /walk-invites, /walk-invites/:id
 
 // ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
 app.post("/api/auth/logout", (req, res) => {

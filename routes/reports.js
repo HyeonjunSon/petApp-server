@@ -14,7 +14,7 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     // 이미지/영상/오디오 허용
     const ok = /^(image|video|audio)\//.test(file.mimetype);
-    cb(ok ? null : new multer.MulterError("LIMIT_UNEXPECTED_FILE", "이미지/영상/음성만 업로드 가능"), ok);
+    cb(ok ? null : new multer.MulterError("LIMIT_UNEXPECTED_FILE", "Only image, video, or audio files are allowed"), ok);
   },
 });
 
@@ -40,8 +40,8 @@ router.post("/evidences", requireAuth, upload.array("evidences", 20), async (req
     return res.json({ urls });
   } catch (err) {
     if (err instanceof multer.MulterError) {
-      if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ message: "파일당 최대 25MB" });
-      return res.status(400).json({ message: err.message || "업로드 실패" });
+      if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ message: "Max 25MB per file" });
+      return res.status(400).json({ message: err.message || "Upload failed" });
     }
     next(err);
   }
@@ -55,12 +55,12 @@ router.post("/evidences", requireAuth, upload.array("evidences", 20), async (req
 router.post("/", requireAuth, async (req, res, next) => {
   try {
     const { targetId, category, reason, evidenceUrls } = req.body || {};
-    if (!targetId || !reason) return res.status(400).json({ message: "targetId, reason 필수" });
+    if (!targetId || !reason) return res.status(400).json({ message: "targetId and reason are required" });
 
     const doc = await Report.create({
       owner: req.user?._id || req.userId,
       targetId: String(targetId),
-      category: String(category || "기타"),
+      category: String(category || "Other"),
       reason: String(reason),
       evidenceUrls: Array.isArray(evidenceUrls) ? evidenceUrls.slice(0, 20) : [],
       status: "received",

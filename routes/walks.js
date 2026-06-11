@@ -28,15 +28,15 @@ router.get("/", requireAuth, async (req, res) => {
 
     if (petId) {
       if (!isValidObjectId(petId)) {
-        return res.status(400).json({ message: "잘못된 owner 형식입니다." });
+        return res.status(400).json({ message: "Invalid owner format." });
       }
       q.pet = petId;
     }
 
     const fromDate = parseDate(from);
     const toDate   = parseDate(to);
-    if (from && !fromDate) return res.status(400).json({ message: "from 날짜 형식이 올바르지 않습니다." });
-    if (to && !toDate)     return res.status(400).json({ message: "to 날짜 형식이 올바르지 않습니다." });
+    if (from && !fromDate) return res.status(400).json({ message: "Invalid 'from' date format." });
+    if (to && !toDate)     return res.status(400).json({ message: "Invalid 'to' date format." });
 
     if (fromDate || toDate) {
       q.startedAt = {};
@@ -75,20 +75,20 @@ router.post("/", requireAuth, async (req, res) => {
     } = req.body;
 
     if (!isValidObjectId(petId)) {
-      return res.status(400).json({ message: "잘못된 petId 형식입니다." });
+      return res.status(400).json({ message: "Invalid petId format." });
     }
 
     const pet = await Pet.findById(petId).lean();
-    if (!pet) return res.status(400).json({ message: "존재하지 않는 반려동물입니다." });
+    if (!pet) return res.status(400).json({ message: "Pet not found." });
 
     const sAt = startedAt ? parseDate(startedAt) : new Date();
-    if (!sAt) return res.status(400).json({ message: "startedAt 날짜 형식이 올바르지 않습니다." });
+    if (!sAt) return res.status(400).json({ message: "Invalid startedAt date format." });
 
     let eAt = null;
     if (endedAt) {
       eAt = parseDate(endedAt);
-      if (!eAt) return res.status(400).json({ message: "endedAt 날짜 형식이 올바르지 않습니다." });
-      if (eAt < sAt) return res.status(400).json({ message: "endedAt은 startedAt 이후여야 합니다." });
+      if (!eAt) return res.status(400).json({ message: "Invalid endedAt date format." });
+      if (eAt < sAt) return res.status(400).json({ message: "endedAt must be after startedAt." });
     }
 
     const dist = Math.max(0, Number(distanceKm) || 0);
@@ -121,12 +121,12 @@ router.delete("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id)) {
-      return res.status(400).json({ message: "잘못된 id 형식입니다." });
+      return res.status(400).json({ message: "Invalid id format." });
     }
 
     const deleted = await Walk.findOneAndDelete({ _id: id, owner: req.user._id });
     if (!deleted) {
-      return res.status(404).json({ message: "기록을 찾을 수 없거나 권한이 없습니다." });
+      return res.status(404).json({ message: "Record not found or permission denied." });
     }
 
     res.json({ ok: true });

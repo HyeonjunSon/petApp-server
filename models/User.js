@@ -20,6 +20,7 @@ const UserSchema = new mongoose.Schema({
     type: { type: String, enum: ["Point"], default: "Point" },
     coordinates: { type: [Number], default: [0, 0] }, // [lng, lat]
   },
+  locationName: { type: String, default: "" },
   about: String,
   photos: [PhotoSchema],
   pets: [{ type: mongoose.Schema.Types.ObjectId, ref: "Pet" }],
@@ -27,6 +28,14 @@ const UserSchema = new mongoose.Schema({
   roles: [String],
   goal: String,
   interests: [String],
+  settings: {
+    maxDistance: { type: Number, default: 10 },
+    ageRange: { type: [Number], default: [20, 40] },
+    species: { type: String, enum: ["all", "dog", "cat"], default: "all" },
+    discoverable: { type: Boolean, default: true },
+    push: { type: Boolean, default: true },
+  },
+  pushTokens: { type: [String], default: [] }, // Expo push tokens (multi-device)
   createdAt: { type: Date, default: Date.now },
 });
 

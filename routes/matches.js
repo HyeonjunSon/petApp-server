@@ -1,6 +1,7 @@
 const express = require("express");
 const Match = require("../models/Match");
 const Message = require("../models/Message");
+const Block = require("../models/Block");
 const requireAuth = require("../middleware/requireAuth");
 const { isValidObjectId, Types } = require("mongoose");
 const router = express.Router();
@@ -16,7 +17,7 @@ router.get("/", async (req, res, next) => {
     const userId = req.user._id;
     const uid = new mongoose.Types.ObjectId(userId); // ✅ ObjectId로 캐스팅
 
-    const rooms = await Match.find({ users: uid }) // ✅ 여기서도 uid
+    const roomsAll = await Match.find({ users: uid }) // ✅ 여기서도 uid
       .select("_id users updatedAt lastMessage roomId")
       .populate({
         path: "users",
@@ -26,6 +27,18 @@ router.get("/", async (req, res, next) => {
       .populate("lastMessage", "_id text createdAt from")
       .sort("-updatedAt")
       .lean({ virtuals: true });
+
+    // 차단한/차단당한 상대와의 방은 숨김 (양방향)
+    const [iBlocked, blockedMe] = await Promise.all([
+      Block.find({ owner: uid }).select("targetId").lean(),
+      Block.find({ targetId: String(uid) }).select("owner").lean(),
+    ]);
+    const blocked = new Set();
+    iBlocked.forEach((b) => blocked.add(String(b.targetId)));
+    blockedMe.forEach((b) => blocked.add(String(b.owner)));
+    const rooms = roomsAll.filter(
+      (r) => !(r.users || []).some((u) => blocked.has(String(u._id)))
+    );
 
     const matchIds = rooms.map((r) => r._id);
 

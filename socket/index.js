@@ -3,7 +3,9 @@ const { Server } = require("socket.io");
 const { isValidObjectId } = require("mongoose");
 const Match = require("../models/Match");
 const Message = require("../models/Message");
+const User = require("../models/User");
 const socketAuth = require("./auth");
+const { pushToUser } = require("../utils/push");
 
 function initSocket(httpServer, corsOrigin = "*") {
   const io = new Server(httpServer, {
@@ -91,6 +93,17 @@ function initSocket(httpServer, corsOrigin = "*") {
         };
         match.users.map(String).forEach((uid) => {
           io.to(`user:${uid}`).emit("match:updated", last);
+        });
+
+        // 상대에게 푸시 알림 (보낸 사람 제외)
+        const senderDoc = await User.findById(userId).select("name").lean();
+        match.users.map(String).forEach((uid) => {
+          if (uid === String(userId)) return;
+          pushToUser(uid, {
+            title: senderDoc?.name || "New message",
+            body: msg.text.slice(0, 120),
+            data: { type: "message", matchId: String(matchId) },
+          });
         });
       } catch (e) {
         if (typeof ack === "function") ack({ ok: false, error: e.message });

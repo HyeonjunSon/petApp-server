@@ -13,7 +13,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
     const ok = /image\/(png|jpe?g|webp)/.test(file.mimetype);
-    cb(ok ? null : new Error("이미지 파일만 업로드 가능합니다."), ok);
+    cb(ok ? null : new Error("Only image files are allowed."), ok);
   },
 });
 /* ------------------------------------------------------ */
@@ -49,7 +49,7 @@ router.get("/me", requireAuth, async (req, res, next) => {
  */
 router.patch("/update", requireAuth, async (req, res, next) => {
   try {
-    const allowed = ["name", "phone", "about", "birthYear", "goal", "interests"];
+    const allowed = ["name", "phone", "about", "birthYear", "goal", "interests", "locationName"];
     const updateFields = {};
 
     for (const f of allowed) {
@@ -70,7 +70,7 @@ router.patch("/update", requireAuth, async (req, res, next) => {
       new: true,
     }).lean();
 
-    if (!updated) return res.status(404).json({ message: "사용자 없음" });
+    if (!updated) return res.status(404).json({ message: "User not found" });
 
     return res.json({
       _id: updated._id,
@@ -93,7 +93,7 @@ router.patch("/update", requireAuth, async (req, res, next) => {
  */
 router.put("/me", requireAuth, async (req, res, next) => {
   try {
-    const { name, about, goal, interests, phone, birthYear } = req.body;
+    const { name, about, goal, interests, phone, birthYear, locationName, lat, lng } = req.body;
 
     const update = {};
     if (typeof name === "string") update.name = name.trim();
@@ -102,6 +102,14 @@ router.put("/me", requireAuth, async (req, res, next) => {
     if (Array.isArray(interests)) update.interests = interests.slice(0, 5);
     if (typeof phone === "string") update.phone = phone.trim();
     if (birthYear !== undefined) update.birthYear = birthYear;
+    if (typeof locationName === "string") update.locationName = locationName.trim();
+    // 좌표 저장 (GeoJSON: [lng, lat]) — 위치 기반 Discover용
+    if (lat !== undefined && lng !== undefined && lat !== null && lng !== null) {
+      const la = Number(lat), lo = Number(lng);
+      if (!Number.isNaN(la) && !Number.isNaN(lo)) {
+        update.location = { type: "Point", coordinates: [lo, la] };
+      }
+    }
 
     const me = await User.findByIdAndUpdate(
       getUserId(req),
@@ -111,6 +119,21 @@ router.put("/me", requireAuth, async (req, res, next) => {
 
     if (!me) return res.status(404).json({ message: "User not found" });
     res.json(me);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Expo 푸시 토큰 등록
+ * POST /api/users/me/push-token  body: { token }
+ */
+router.post("/me/push-token", requireAuth, async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    if (!token) return res.status(400).json({ message: "token is required" });
+    await User.findByIdAndUpdate(getUserId(req), { $addToSet: { pushTokens: token } });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -130,13 +153,13 @@ router.post("/change-password", requireAuth, async (req, res, next) => {
     }
 
     const user = await User.findById(getUserId(req));
-    if (!user) return res.status(404).json({ message: "사용자 없음" });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!valid)
       return res
         .status(401)
-        .json({ message: "현재 비밀번호가 올바르지 않습니다." });
+        .json({ message: "Current password is incorrect." });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
@@ -159,7 +182,7 @@ router.post(
   upload.single("photo"),
   async (req, res, next) => {
     try {
-      if (!req.file) return res.status(400).json({ message: "파일 없음" });
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
       const { type = "pet" } = req.body;
 
