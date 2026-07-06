@@ -23,6 +23,9 @@ const blocksRoutes = require("./routes/blocks");
 const settingsRoutes = require("./routes/settings");
 const accountRoutes = require("./routes/account");
 const walkInvitesRoutes = require("./routes/walk-invites");
+const stepsRoutes = require("./routes/steps");
+const messagesRoutes = require("./routes/messages");
+const billingRoutes = require("./routes/billing");
 
 const { initSocket } = require("./socket");
 
@@ -118,6 +121,9 @@ app.use("/api/blocks", blocksRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api", walkInvitesRoutes); // mounts /matches/:id/walk-invite, /walk-invites, /walk-invites/:id
+app.use("/api/steps", stepsRoutes);
+app.use("/api/messages", messagesRoutes);
+app.use("/api/billing", billingRoutes);
 
 // ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
 app.post("/api/auth/logout", (req, res) => {
@@ -151,21 +157,24 @@ app.use((err, _req, res, _next) => {
 });
 
 // ---------- 서버 시작 ----------
-const PORT = process.env.PORT || 5050;
-(async () => {
-  try {
-    await connectDB();
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server listening on http://localhost:${PORT}`);
-      console.log("REST:   GET  /api/health");
-      console.log("REST:   GET  /api/photos");
-      console.log("Socket: ws   /socket.io");
-      console.log("Socket.IO ready on /socket.io");
-    });
-  } catch (err) {
-    console.error("MongoDB connection error on boot:", err);
-    process.exit(1);
-  }
-})();
+// Tests require this file as a module just for `app` — skip auto-bootstrap there.
+if (process.env.NODE_ENV !== "test") {
+  const PORT = process.env.PORT || 5050;
+  (async () => {
+    try {
+      await connectDB();
+      server.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server listening on http://localhost:${PORT}`);
+        console.log("REST:   GET  /api/health");
+        console.log("REST:   GET  /api/photos");
+        console.log("Socket: ws   /socket.io");
+        console.log("Socket.IO ready on /socket.io");
+      });
+    } catch (err) {
+      console.error("MongoDB connection error on boot:", err);
+      process.exit(1);
+    }
+  })();
+}
 
 module.exports = { app, server, io };

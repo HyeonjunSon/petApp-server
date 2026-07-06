@@ -7,7 +7,9 @@ const Match = require("../models/Match");
 const WalkInvite = require("../models/WalkInvite");
 const { pushToUser } = require("../utils/push");
 
-router.use(requireAuth);
+// NB: mounted at /api so we MUST attach requireAuth per-route, not via
+// router.use — otherwise public routes like /api/billing/plans get a 401
+// from this router before reaching their own handler.
 
 const me = (req) => String(req.user._id);
 
@@ -15,7 +17,7 @@ const me = (req) => String(req.user._id);
    POST /api/matches/:id/walk-invite
    body: { date, time, place?, note? }
 ================================================= */
-router.post("/matches/:id/walk-invite", async (req, res, next) => {
+router.post("/matches/:id/walk-invite", requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id)) return res.status(400).json({ message: "Invalid match id." });
@@ -58,7 +60,7 @@ router.post("/matches/:id/walk-invite", async (req, res, next) => {
    PATCH /api/walk-invites/:id
    body: { status: confirmed|declined|cancelled }
 ================================================= */
-router.patch("/walk-invites/:id", async (req, res, next) => {
+router.patch("/walk-invites/:id", requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id)) return res.status(400).json({ message: "Invalid invite id." });
@@ -94,7 +96,7 @@ router.patch("/walk-invites/:id", async (req, res, next) => {
    GET /api/walk-invites
    query: scope=mine (default) | upcoming
 ================================================= */
-router.get("/walk-invites", async (req, res, next) => {
+router.get("/walk-invites", requireAuth, async (req, res, next) => {
   try {
     const myId = me(req);
     const scope = String(req.query.scope || "mine");

@@ -228,4 +228,38 @@ router.post("/reset-password", async (req, res, next) => {
 
 router.post("/logout", (_req, res) => res.json({ ok: true }));
 
+/* ====================================================
+   POST /auth/change-password
+   Authenticated. Verifies the current password and sets a new one.
+==================================================== */
+const requireAuth = require("../middleware/requireAuth");
+router.post("/change-password", requireAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword)
+      return res
+        .status(400)
+        .json({ msg: "currentPassword and newPassword are required." });
+    if (typeof newPassword !== "string" || newPassword.length < 8)
+      return res
+        .status(400)
+        .json({ msg: "Password must be at least 8 characters." });
+
+    const user = await User.findById(req.userId).select("+passwordHash");
+    if (!user) return res.status(404).json({ msg: "User not found." });
+
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash || "");
+    if (!ok)
+      return res
+        .status(400)
+        .json({ msg: "Current password is incorrect." });
+
+    user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await user.save();
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

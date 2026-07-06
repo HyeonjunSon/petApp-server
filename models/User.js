@@ -53,4 +53,10 @@ UserSchema.virtual('ownedPets', {
   justOne: false,
 });
 
+// 편의 virtual: 보호자 얼굴 사진 URL (photos[].type === 'owner_face' 의 첫 항목)
+UserSchema.virtual('faceUrl').get(function () {
+  const face = (this.photos || []).find((p) => p && p.type === 'owner_face');
+  return face?.url || undefined;
+});
+
 module.exports = mongoose.model("User", UserSchema);
