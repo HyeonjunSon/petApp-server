@@ -150,7 +150,7 @@ async function run() {
 
   const m1 = await mkMatch(me, created[1].user); // Mong · Jiwoo
   const m2 = await mkMatch(me, created[2].user); // Max · Minjun
-  await mkMatch(me, created[3].user);            // Dubu · Sua
+  const m3 = await mkMatch(me, created[3].user); // Dubu · Sua
 
   // conversation in m1
   const msgs = await Message.create([
@@ -162,28 +162,39 @@ async function run() {
   m1.lastMessage = msgs[msgs.length - 1]._id;
   await m1.save();
 
-  // walk invites
+  // walk invites (plans). Records are never entered by hand — they flow from
+  // completing a plan, so the completed one below also creates linked Walks.
   const d = (offset) => {
     const dt = new Date();
     dt.setDate(dt.getDate() + offset);
     return dt.toISOString().slice(0, 10);
   };
-  await WalkInvite.create([
-    { from: created[1].user._id, to: me._id, match: m1._id, date: d(3), time: "10:00", place: "Seoul Forest entrance", note: "Title: Weekend morning walk · Max 2", status: "confirmed" },
-    { from: me._id, to: created[2].user._id, match: m2._id, date: d(6), time: "15:00", place: "Han River Park, Ttukseom", note: "Title: Big-dog group walk", status: "proposed" },
-  ]);
-
-  // walk records for my pet
-  const myPet = created[0].pet._id;
   const past = (daysAgo, hour) => {
     const s = new Date();
     s.setDate(s.getDate() - daysAgo);
     s.setHours(hour, 0, 0, 0);
     return s;
   };
+  const myPet = created[0].pet._id;
+
+  await WalkInvite.create([
+    { from: created[1].user._id, to: me._id, match: m1._id, date: d(3), time: "10:00", place: "Seoul Forest entrance", note: "Title: Weekend morning walk · Max 2", status: "confirmed" },
+    { from: me._id, to: created[2].user._id, match: m2._id, date: d(6), time: "15:00", place: "Han River Park, Ttukseom", note: "Title: Big-dog group walk", status: "proposed" },
+  ]);
+
+  // one COMPLETED past plan → auto-created walk records (one per participant)
+  const started = past(4, 9);
+  const myWalk = await Walk.create({ owner: me._id, pet: myPet, distanceKm: 2.9, durationMin: 45, startedAt: started, endedAt: started, notes: "Olympic Park" });
+  const peerWalk = await Walk.create({ owner: created[3].user._id, pet: created[3].pet._id, distanceKm: 2.9, durationMin: 45, startedAt: started, endedAt: started, notes: "Olympic Park" });
+  await WalkInvite.create({
+    from: me._id, to: created[3].user._id, match: m3._id, date: d(-4), time: "09:00",
+    place: "Olympic Park", note: "Title: Morning meetup", status: "completed",
+    completedAt: new Date(), distanceKm: 2.9, durationMin: 45, linkedWalks: [myWalk._id, peerWalk._id],
+  });
+
+  // a couple of older records for my pet
   await Walk.create([
-    { owner: me._id, pet: myPet, distanceKm: 3.2, durationMin: 48, startedAt: past(6, 10), endedAt: past(6, 10), notes: "Han River walk" },
-    { owner: me._id, pet: myPet, distanceKm: 2.7, durationMin: 41, startedAt: past(9, 14), endedAt: past(9, 14), notes: "Around the block" },
+    { owner: me._id, pet: myPet, distanceKm: 3.2, durationMin: 48, startedAt: past(9, 10), endedAt: past(9, 10), notes: "Han River walk" },
     { owner: me._id, pet: myPet, distanceKm: 4.1, durationMin: 62, startedAt: past(12, 9), endedAt: past(12, 9), notes: "Long walk at Seoul Forest" },
   ]);
 

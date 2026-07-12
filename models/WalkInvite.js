@@ -13,10 +13,16 @@ const WalkInviteSchema = new Schema(
     note:  { type: String, default: "" },
     status: {
       type: String,
-      enum: ["proposed", "confirmed", "declined", "cancelled"],
+      enum: ["proposed", "confirmed", "declined", "cancelled", "completed"],
       default: "proposed",
       index: true,
     },
+    // Filled in when a confirmed walk is marked completed.
+    completedAt: { type: Date },
+    // Walk records auto-created on completion (one per participant with a pet).
+    linkedWalks: [{ type: Types.ObjectId, ref: "Walk" }],
+    distanceKm: { type: Number, default: 0 },
+    durationMin: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
