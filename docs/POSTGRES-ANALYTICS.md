@@ -49,11 +49,14 @@ npm run dev
 }
 ```
 
-## 배포 (Heroku)
+## 배포 (Heroku + Neon)
 
-1. `heroku addons:create heroku-postgresql:essential-0` → `DATABASE_URL` 자동 설정
-2. 릴리즈 시 마이그레이션: `Procfile`에 `release: npx prisma migrate deploy` 추가 (또는 수동 `npm run prisma:deploy`)
-3. Heroku PG는 SSL 필요 — 연결 문자열에 `?sslmode=require`가 없으면 붙일 것
+프로덕션 DB는 **Neon** (서버리스 Postgres, 무료 티어) — 프로젝트 `petdate-analytics`.
+
+1. `neonctl connection-string --project-id <id>` 로 연결 문자열 확인
+2. `heroku config:set DATABASE_URL="<neon url>" -a petwebapp`
+3. `git push heroku main` — `Procfile`의 release 단계(`npx prisma migrate deploy`)가 자동으로 마이그레이션 적용
+4. Neon 연결 문자열에는 `sslmode=require`가 이미 포함돼 있고, 없더라도 dyno에서는 코드가 자동으로 붙인다 (`config/analytics.js`)
 
 ## 운영 노트
 
