@@ -13,12 +13,24 @@ function isEnabled() {
   return Boolean(process.env.DATABASE_URL);
 }
 
+// Heroku Postgres는 SSL이 필수(자체 서명 인증서)라서, dyno에서 URL에
+// sslmode가 빠져 있으면 require를 붙여 준다. 로컬(docker)은 그대로.
+function resolveUrl() {
+  const url = process.env.DATABASE_URL || "";
+  if (process.env.DYNO && url && !/[?&]sslmode=/.test(url)) {
+    return url + (url.includes("?") ? "&" : "?") + "sslmode=require";
+  }
+  return url;
+}
+
 function getPrisma() {
   if (!isEnabled()) return null;
   if (!prisma) {
     // require를 지연시켜 DATABASE_URL 없이도(client 미생성 상태 포함) 서버가 뜨게 한다.
     const { PrismaClient } = require("@prisma/client");
-    prisma = new PrismaClient();
+    prisma = new PrismaClient({
+      datasources: { db: { url: resolveUrl() } },
+    });
   }
   return prisma;
 }
