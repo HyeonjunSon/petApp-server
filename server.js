@@ -26,6 +26,7 @@ const walkInvitesRoutes = require("./routes/walk-invites");
 const stepsRoutes = require("./routes/steps");
 const messagesRoutes = require("./routes/messages");
 const billingRoutes = require("./routes/billing");
+const analyticsRoutes = require("./routes/analytics");
 
 const { initSocket } = require("./socket");
 
@@ -124,6 +125,7 @@ app.use("/api", walkInvitesRoutes); // mounts /matches/:id/walk-invite, /walk-in
 app.use("/api/steps", stepsRoutes);
 app.use("/api/messages", messagesRoutes);
 app.use("/api/billing", billingRoutes);
+app.use("/api/analytics", analyticsRoutes); // PostgreSQL(Prisma) 매칭/산책 분석
 
 // ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
 app.post("/api/auth/logout", (req, res) => {

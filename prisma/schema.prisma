@@ -1,0 +1,58 @@
+// PetDate analytics store — PostgreSQL via Prisma.
+//
+// MongoDB(Mongoose)가 운영 데이터의 원본이고, Postgres는 매칭/산책 이벤트
+// 로그와 분석 쿼리 전용이다. 여기 테이블은 append-only 로그라서 Mongo
+// 도큐먼트와 스키마를 맞출 필요가 없고, Mongo ObjectId는 String으로 저장한다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SwipeAction {
+  LIKE
+  PASS
+}
+
+/// 디스커버에서의 좋아요/패스 1건 = 1행. matched는 이 좋아요로
+/// 상호 매치가 성립했는지 (좋아요 시점에만 true 가능).
+model SwipeEvent {
+  id        BigInt      @id @default(autoincrement())
+  actorId   String      @db.VarChar(24)
+  targetId  String      @db.VarChar(24)
+  action    SwipeAction
+  matched   Boolean     @default(false)
+  matchId   String?     @db.VarChar(24)
+  createdAt DateTime    @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+  @@map("swipe_events")
+}
+
+enum WalkEventStatus {
+  PROPOSED
+  CONFIRMED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+/// 산책 약속(WalkInvite)의 상태 전이 로그. 생성 시 PROPOSED,
+/// 이후 PATCH 전이마다 1행씩 쌓인다.
+model WalkEvent {
+  id        BigInt          @id @default(autoincrement())
+  inviteId  String          @db.VarChar(24)
+  matchId   String?         @db.VarChar(24)
+  actorId   String          @db.VarChar(24)
+  status    WalkEventStatus
+  createdAt DateTime        @default(now())
+
+  @@index([inviteId])
+  @@index([createdAt])
+  @@map("walk_events")
+}

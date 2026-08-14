@@ -1,0 +1,20 @@
+# 로컬 분석용 PostgreSQL (운영 데이터는 MongoDB, 분석 로그만 Postgres).
+# 실행:  docker compose -f docker-compose.postgres.yml up -d
+# 종료:  docker compose -f docker-compose.postgres.yml down
+# 호스트 포트 5433 사용 — 로컬(Homebrew) Postgres 5432와 충돌 방지.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: petdate-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: petdate
+      POSTGRES_PASSWORD: petdate
+      POSTGRES_DB: petdate_analytics
+    ports:
+      - "5433:5432"
+    volumes:
+      - petdate_pgdata:/var/lib/postgresql/data
+
+volumes:
+  petdate_pgdata:

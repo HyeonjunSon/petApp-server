@@ -9,6 +9,7 @@ const Like = require("../models/Like");
 const User = require("../models/User");
 const Entitlement = require("../models/Entitlement");
 const { pushToUser } = require("../utils/push");
+const { logSwipe } = require("../config/analytics");
 
 const FREE_DAILY_LIKE_LIMIT = 30;
 
@@ -52,6 +53,7 @@ router.post("/like/:targetId", async (req, res, next) => {
     // 상대가 나를 이미 좋아했는지 확인 → 상호일 때만 매치
     const reciprocal = await Like.findOne({ owner: you, targetId: me }).select("_id").lean();
     if (!reciprocal) {
+      logSwipe({ actorId: me, targetId: you, action: "LIKE" });
       return res.json({ ok: true, matched: false });
     }
 
@@ -67,6 +69,7 @@ router.post("/like/:targetId", async (req, res, next) => {
       data: { type: "match", matchId: String(match._id) },
     });
 
+    logSwipe({ actorId: me, targetId: you, action: "LIKE", matched: true, matchId: match._id });
     res.json({ ok: true, matched: true, matchId: match._id });
   } catch (e) { next(e); }
 });
@@ -83,6 +86,7 @@ router.post("/pass/:targetId", async (req, res, next) => {
       { $setOnInsert: { owner: me, targetId: you } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    logSwipe({ actorId: me, targetId: you, action: "PASS" });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

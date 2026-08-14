@@ -8,6 +8,7 @@ const WalkInvite = require("../models/WalkInvite");
 const Walk = require("../models/Walks");
 const Pet = require("../models/Pet");
 const { pushToUser } = require("../utils/push");
+const { logWalkEvent } = require("../config/analytics");
 
 // Build a Date from the invite's "YYYY-MM-DD" + "HH:mm".
 function parseInviteStart(invite) {
@@ -53,6 +54,8 @@ router.post("/matches/:id/walk-invite", requireAuth, async (req, res, next) => {
       note: typeof note === "string" ? note.trim() : "",
       status: "proposed",
     });
+
+    logWalkEvent({ inviteId: doc._id, matchId: id, actorId: me(req), status: "PROPOSED" });
 
     // 상대에게 산책 약속 알림
     pushToUser(peer, {
@@ -114,6 +117,7 @@ router.patch("/walk-invites/:id", requireAuth, async (req, res, next) => {
       invite.completedAt = new Date();
       invite.linkedWalks = walkIds;
       await invite.save();
+      logWalkEvent({ inviteId: invite._id, matchId: invite.match, actorId: myId, status: "COMPLETED" });
       return res.json(invite);
     }
 
@@ -130,6 +134,12 @@ router.patch("/walk-invites/:id", requireAuth, async (req, res, next) => {
 
     invite.status = next_;
     await invite.save();
+    logWalkEvent({
+      inviteId: invite._id,
+      matchId: invite.match,
+      actorId: myId,
+      status: next_.toUpperCase(),
+    });
     res.json(invite);
   } catch (e) { next(e); }
 });
