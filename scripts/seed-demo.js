@@ -21,6 +21,7 @@ const Match = require("../models/Match");
 const Message = require("../models/Message");
 const WalkInvite = require("../models/WalkInvite");
 const Walk = require("../models/Walks");
+const Post = require("../models/Post");
 
 const PASSWORD = "Petdate123!";
 const SALT_ROUNDS = 10;
@@ -105,6 +106,21 @@ const PEOPLE = [
     photos: [ceo("shihtzu/zoi_2.jpg"), ceo("shihtzu/oscar.jpg"), ceo("shihtzu/zoi_5.jpg")] },
 ];
 
+// 데모 좌표 — 마포(demo1) 기준 반경 ~0.4–3km에 흩어진 [lng, lat].
+// Pack의 실제 거리 정렬($near)과 distanceM 표기가 살아나게 한다.
+const COORDS = [
+  [126.9084, 37.5561], // demo1 · Mapo (기준점)
+  [126.9127, 37.5548], // ~0.4 km
+  [126.9151, 37.5601], // ~0.7 km
+  [126.9014, 37.5502], // ~0.9 km
+  [126.9205, 37.5525], // ~1.1 km
+  [126.8968, 37.5620], // ~1.2 km
+  [126.9231, 37.5610], // ~1.4 km
+  [126.8930, 37.5480], // ~1.6 km
+  [126.9290, 37.5470], // ~2.1 km
+  [126.8850, 37.5680], // ~2.4 km
+];
+
 async function run() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI missing in .env");
@@ -126,6 +142,7 @@ async function run() {
       WalkInvite.deleteMany({ $or: [{ from: { $in: oldIds } }, { to: { $in: oldIds } }] }),
       Walk.deleteMany({ owner: { $in: oldIds } }),
       Match.deleteMany({ _id: { $in: oldMatchIds } }),
+      Post.deleteMany({ author: { $in: oldIds } }),
     ]);
     await User.deleteMany({ _id: { $in: oldIds } });
     console.log(`Removed ${oldIds.length} previous demo user(s) and related data.`);
@@ -147,6 +164,7 @@ async function run() {
       gender: p.gender,
       birthYear: p.birthYear,
       locationName: p.region,
+      location: { type: "Point", coordinates: COORDS[i] },
       about: p.about,
       goal: p.goal,
       interests: p.interests,
@@ -234,6 +252,55 @@ async function run() {
     { owner: me._id, pet: myPet, distanceKm: 3.2, durationMin: 48, startedAt: past(9, 10), endedAt: past(9, 10), notes: "Han River walk" },
     { owner: me._id, pet: myPet, distanceKm: 4.1, durationMin: 62, startedAt: past(12, 9), endedAt: past(12, 9), notes: "Long walk at Seoul Forest" },
   ]);
+
+  // --- neighbourhood feed posts (Offleash) ---
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000);
+  const postAt = (idx, type, body, createdAt, opts = {}) =>
+    Post.create({
+      author: created[idx].user._id,
+      type,
+      body,
+      location: { type: "Point", coordinates: COORDS[idx] },
+      locationName: PEOPLE[idx].region,
+      createdAt,
+      ...opts,
+    });
+
+  const lost = await postAt(
+    6, "lost",
+    "Kong slipped his collar near the park entrance around 8. Beagle, very friendly, will come to treats. Please check backyards and under porches.",
+    hoursAgo(1)
+  );
+  lost.reactions = [created[1].user._id, created[2].user._id, created[3].user._id];
+  await lost.save();
+
+  const walkReq = await postAt(
+    1, "walk-request",
+    "Looking for a weekday morning walk buddy, around 7. Mong is a 2-year-old Maltese, calm and great with everyone.",
+    hoursAgo(3)
+  );
+  walkReq.reactions = [me._id, created[4].user._id];
+  walkReq.comments.push({
+    author: created[4].user._id,
+    body: "Haru and I do 7:15 on Tuesdays and Thursdays — want to join?",
+    createdAt: hoursAgo(2),
+  });
+  await walkReq.save();
+
+  const rec = await postAt(
+    2, "recommend",
+    "The Seoul Forest off-leash area finally has a water fountain that works. Go before 8 if your dog is shy — it fills up fast after.",
+    hoursAgo(6)
+  );
+  rec.reactions = [me._id, created[1].user._id, created[5].user._id, created[7].user._id];
+  await rec.save();
+
+  await postAt(
+    9, "question",
+    "Any vet around Mapo that's good with anxious dogs? Coco hates the one we've been going to.",
+    hoursAgo(26)
+  );
+  console.log("Seeded 4 neighbourhood posts.");
 
   console.log("\n=== DEMO ACCOUNTS (password is the same for all) ===");
   console.log(`PASSWORD: ${PASSWORD}\n`);

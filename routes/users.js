@@ -52,6 +52,13 @@ router.patch("/update", requireAuth, async (req, res, next) => {
     const allowed = ["name", "phone", "about", "birthYear", "goal", "interests", "locationName"];
     const updateFields = {};
 
+    // 위치 좌표 저장: { location: { lat, lng } } → GeoJSON Point (2dsphere)
+    const lat = Number(req.body?.location?.lat);
+    const lng = Number(req.body?.location?.lng);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      updateFields.location = { type: "Point", coordinates: [lng, lat] };
+    }
+
     for (const f of allowed) {
       if (req.body[f] !== undefined) {
         updateFields[f] =

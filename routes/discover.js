@@ -51,19 +51,38 @@ router.get("/", async (req, res, next) => {
     }
 
     const users = await User.find(query)
-      .select("_id name photos pets settings verified birthYear about goal locationName")
+      .select("_id name photos pets settings verified birthYear about goal locationName location")
       .populate("pets", "name breed age type size temperament")
       .limit(limit)
       .lean();
 
+    // 실제 거리(m) — 내 좌표와 상대 좌표가 모두 있을 때만
+    const distM = (a, b) => {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(b[1] - a[1]);
+      const dLng = toRad(b[0] - a[0]);
+      const s =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.sin(dLng / 2) ** 2;
+      return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)));
+    };
+    const theirCoords = (u) => {
+      const c = u?.location?.coordinates;
+      return Array.isArray(c) && (Number(c[0]) !== 0 || Number(c[1]) !== 0) ? c : null;
+    };
+
     const year = new Date().getFullYear();
     const cards = users.map((u) => {
+      const tc = hasGeo ? theirCoords(u) : null;
+      const distanceM = tc ? distM(coords, tc) : undefined;
       const pet = Array.isArray(u.pets) && u.pets[0] ? u.pets[0] : null;
       const photos = (u.photos || []).filter((p) => ["owner_face", "pet"].includes(p.type));
       return {
         id: u._id,
         name: u.name || "Someone",
         verified: !!u.verified,
+        distanceM,
         // person-first (dating)
         ownerAge: u.birthYear ? year - u.birthYear : undefined,
         about: u.about || "",
