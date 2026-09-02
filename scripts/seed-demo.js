@@ -233,8 +233,12 @@ async function run() {
   const myPet = created[0].pet._id;
 
   await WalkInvite.create([
-    { from: created[1].user._id, to: me._id, match: m1._id, date: d(3), time: "10:00", place: "Seoul Forest main gate", note: "Title: Weekend morning walk · Max 2 groups", status: "confirmed" },
-    { from: me._id, to: created[2].user._id, match: m2._id, date: d(6), time: "15:00", place: "Han River Park, Ttukseom", note: "Title: Big-dog group walk", status: "proposed" },
+    { from: created[1].user._id, to: me._id, match: m1._id, date: d(3), time: "10:00", place: "Seoul Forest main gate",
+      meetPoint: { type: "Point", coordinates: [127.0374, 37.5443] },
+      note: "Title: Weekend morning walk · Max 2 groups", status: "confirmed" },
+    { from: me._id, to: created[2].user._id, match: m2._id, date: d(6), time: "15:00", place: "Han River Park, Ttukseom",
+      meetPoint: { type: "Point", coordinates: [127.0665, 37.5297] },
+      note: "Title: Big-dog group walk", status: "proposed" },
   ]);
 
   // one COMPLETED past plan → auto-created walk records (one per participant)

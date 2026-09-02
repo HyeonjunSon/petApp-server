@@ -10,6 +10,11 @@ const WalkInviteSchema = new Schema(
     date: { type: String, required: true }, // YYYY-MM-DD
     time: { type: String, required: true }, // HH:mm
     place: { type: String, default: "" },
+    // 만날 장소 좌표 (지도 픽커에서 선택, 선택 사항)
+    meetPoint: {
+      type: { type: String, enum: ["Point"], default: undefined },
+      coordinates: { type: [Number], default: undefined }, // [lng, lat]
+    },
     note:  { type: String, default: "" },
     status: {
       type: String,

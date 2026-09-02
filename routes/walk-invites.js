@@ -40,9 +40,17 @@ router.post("/matches/:id/walk-invite", requireAuth, async (req, res, next) => {
     const peer = match.users.map(String).find((u) => u !== me(req));
     if (!peer) return res.status(400).json({ message: "Peer not found in match." });
 
-    const { date, time, place, note } = req.body || {};
+    const { date, time, place, note, location } = req.body || {};
     if (!date || !time)
       return res.status(400).json({ message: "date and time are required." });
+
+    // 선택: 만날 장소 좌표 { lat, lng }
+    let meetPoint;
+    const lat = Number(location?.lat);
+    const lng = Number(location?.lng);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      meetPoint = { type: "Point", coordinates: [lng, lat] };
+    }
 
     const doc = await WalkInvite.create({
       from: me(req),
@@ -51,6 +59,7 @@ router.post("/matches/:id/walk-invite", requireAuth, async (req, res, next) => {
       date: String(date),
       time: String(time),
       place: typeof place === "string" ? place.trim() : "",
+      ...(meetPoint ? { meetPoint } : {}),
       note: typeof note === "string" ? note.trim() : "",
       status: "proposed",
     });
