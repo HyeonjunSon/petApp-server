@@ -1,5 +1,7 @@
 # Offleash API
 
+[![CI](https://github.com/HyeonjunSon/petApp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/HyeonjunSon/petApp-server/actions/workflows/ci.yml)
+
 Express + MongoDB + PostgreSQL backend for [Offleash](https://github.com/HyeonjunSon/petApp-frontend),
 a neighbourhood community for dog owners. Live at `https://petwebapp-*.herokuapp.com/api`
 behind the [web frontend](https://pet-app-frontend-fawn.vercel.app).
