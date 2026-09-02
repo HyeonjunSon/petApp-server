@@ -75,14 +75,14 @@ describe("/api/billing", () => {
     expect(res.body.entitlements).toEqual([]);
   });
 
-  it("/billing/checkout returns 501 when Stripe is not configured", async () => {
+  it("/billing/checkout rejects an unknown plan with 404", async () => {
     const token = await registerAndGetToken();
 
     const res = await request(app)
       .post("/api/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
-      .send({ planCode: "premium_month" });
+      .send({ planCode: "no_such_plan" });
 
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(404);
   });
 });

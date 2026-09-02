@@ -74,6 +74,66 @@ router.post("/like/:targetId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/matches/likes-me — 나를 좋아요했지만 아직 매치 전인 이웃들.
+// 프리미엄(see_likes)이면 전체 카드, 아니면 개수만 (잠금 응답).
+router.get("/likes-me", async (req, res, next) => {
+  try {
+    const me = String(req.userId);
+    const Block = require("../models/Block");
+
+    const [likesToMe, myLikes, matches, blocks, blockedBy] = await Promise.all([
+      Like.find({ targetId: me }).select("owner createdAt").lean(),
+      Like.find({ owner: me }).select("targetId").lean(),
+      Match.find({ users: me }).select("users").lean(),
+      Block.find({ owner: me }).select("targetId").lean(),
+      Block.find({ targetId: me }).select("owner").lean(),
+    ]);
+
+    const exclude = new Set();
+    myLikes.forEach((l) => exclude.add(String(l.targetId))); // 이미 상호 → 매치로 이동
+    matches.forEach((m) => m.users.forEach((u) => exclude.add(String(u))));
+    blocks.forEach((b) => exclude.add(String(b.targetId)));
+    blockedBy.forEach((b) => exclude.add(String(b.owner)));
+
+    const pending = likesToMe.filter((l) => !exclude.has(String(l.owner)));
+
+    const unlocked = await Entitlement.hasFeature(me, "see_likes");
+    if (!unlocked) {
+      return res.json({ locked: true, count: pending.length });
+    }
+
+    const owners = await User.find({ _id: { $in: pending.map((l) => l.owner) } })
+      .select("name photos pets")
+      .populate("pets", "name breed photos")
+      .lean();
+    const byId = new Map(owners.map((u) => [String(u._id), u]));
+    const users = pending
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .map((l) => {
+        const u = byId.get(String(l.owner));
+        if (!u) return null;
+        const pet = Array.isArray(u.pets) ? u.pets[0] : null;
+        const photo =
+          pet?.photos?.[0]?.url ||
+          (u.photos || []).find((p) => p.type === "pet")?.url ||
+          (u.photos || []).find((p) => p.type === "owner_face")?.url;
+        return {
+          id: String(u._id),
+          name: u.name || "Neighbour",
+          petName: pet?.name,
+          breed: pet?.breed,
+          photo,
+          likedAt: l.createdAt,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ locked: false, users });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // POST /api/matches/pass/:targetId — 패스 기록 (discover에서 제외)
 router.post("/pass/:targetId", async (req, res, next) => {
   try {
