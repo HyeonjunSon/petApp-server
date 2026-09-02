@@ -22,8 +22,8 @@ const DEFAULT_PLANS = [
     code: "premium_monthly",
     label: "Offleash Premium",
     description: "Unlimited swipes, see who liked you, premium badge.",
-    priceCents: 990000, // ₩9,900 (KRW has no minor unit; stored *100 for display consistency)
-    currency: "KRW",
+    priceCents: 999, // $9.99 CAD
+    currency: "CAD",
     interval: "month",
     features: ["unlimited_swipes", "see_likes"],
     sortOrder: 0,
@@ -32,8 +32,8 @@ const DEFAULT_PLANS = [
     code: "premium_yearly",
     label: "Offleash Premium (yearly)",
     description: "Two months free on the yearly plan.",
-    priceCents: 9900000, // ₩99,000
-    currency: "KRW",
+    priceCents: 9999, // $99.99 CAD
+    currency: "CAD",
     interval: "year",
     features: ["unlimited_swipes", "see_likes"],
     sortOrder: 1,
