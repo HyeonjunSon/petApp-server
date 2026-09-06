@@ -128,6 +128,7 @@ app.use("/api/messages", messagesRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/analytics", analyticsRoutes); // PostgreSQL(Prisma) 매칭/산책 분석
 app.use("/api/posts", postsRoutes); // 동네 피드 (Offleash blueprint §5)
+app.use("/api/mapkit", require("./routes/mapkit")); // Apple MapKit JS 토큰
 
 // ----- 로그아웃 경로 일관화 (/api 프리픽스) -----
 app.post("/api/auth/logout", (req, res) => {
