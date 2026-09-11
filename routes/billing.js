@@ -1,11 +1,9 @@
 // server/routes/billing.js
 //
-// Billing — subscription lifecycle. Two modes:
-//   · Stripe mode (STRIPE_SECRET_KEY set): checkout/portal/webhook — still TODO.
-//   · Demo mode (default): checkout instantly activates the subscription and
-//     grants the plan's entitlements, cancel flips cancelAtPeriodEnd and caps
-//     entitlements at the period end. The data layer (Plan/Subscription/
-//     Entitlement) is identical, so wiring Stripe later only swaps the edges.
+// 구독 결제. 두 가지 모드가 **같은 데이터 레이어**를 공유한다:
+//   · Stripe 모드 (STRIPE_SECRET_KEY 설정 시): Checkout Session → 웹훅이 상태 동기화
+//   · 데모 모드 (기본): 즉시 활성화. 키 없이도 전체 플로우를 시연할 수 있다.
+// 권한 반영은 양쪽 모두 services/subscriptions.syncSubscription 하나를 호출한다.
 
 const express = require("express");
 const router = express.Router();
@@ -14,8 +12,15 @@ const requireAuth = require("../middleware/requireAuth");
 const Plan = require("../models/Plan");
 const Subscription = require("../models/Subscription");
 const Entitlement = require("../models/Entitlement");
+const { syncSubscription } = require("../services/subscriptions");
 
 const STRIPE_READY = !!process.env.STRIPE_SECRET_KEY;
+const stripe = () => require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+const APP_URL = (process.env.APP_URL || "https://pet-app-frontend-fawn.vercel.app").replace(
+  /\/+$/,
+  ""
+);
 
 const DEFAULT_PLANS = [
   {
@@ -94,8 +99,8 @@ router.get("/me", requireAuth, async (req, res, next) => {
 
 /* ------------------------------------------------------------------
    POST /api/billing/checkout { planCode }
-   Demo mode: activates the subscription immediately and grants the plan's
-   entitlements. Stripe mode: TODO (session creation) — still 501.
+   Stripe 모드 → Checkout Session URL 반환 (활성화는 웹훅이 담당).
+   데모 모드   → 즉시 활성화.
 ------------------------------------------------------------------ */
 router.post("/checkout", requireAuth, async (req, res, next) => {
   try {
@@ -105,37 +110,53 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
     if (!plan) return res.status(404).json({ msg: "Plan not found." });
 
     if (STRIPE_READY) {
-      // TODO: create a Stripe Checkout Session and return { url }.
-      return res.status(501).json({ msg: "Stripe checkout is not wired yet." });
+      // 대시보드에 상품을 미리 만들어 두지 않아도 되도록, price가 없으면
+      // 우리 Plan 레코드로 price_data를 즉석 구성한다.
+      const lineItem = plan.stripePriceId
+        ? { price: plan.stripePriceId, quantity: 1 }
+        : {
+            quantity: 1,
+            price_data: {
+              currency: (plan.currency || "CAD").toLowerCase(),
+              unit_amount: plan.priceCents,
+              recurring: { interval: plan.interval === "year" ? "year" : "month" },
+              product_data: {
+                name: plan.label,
+                description: plan.description || undefined,
+              },
+            },
+          };
+
+      const existing = await Subscription.findOne({ user: req.userId })
+        .select("stripeCustomerId")
+        .lean();
+
+      const session = await stripe().checkout.sessions.create({
+        mode: "subscription",
+        line_items: [lineItem],
+        success_url: `${APP_URL}/subscription?checkout=success`,
+        cancel_url: `${APP_URL}/subscription?checkout=cancelled`,
+        client_reference_id: String(req.userId),
+        ...(existing?.stripeCustomerId ? { customer: existing.stripeCustomerId } : {}),
+        // 웹훅에서 유저를 찾을 수 있도록 양쪽에 심는다
+        metadata: { userId: String(req.userId), planCode: plan.code },
+        subscription_data: { metadata: { userId: String(req.userId), planCode: plan.code } },
+      });
+
+      return res.json({ url: session.url, stripe: true });
     }
 
     // ── demo checkout: activate right away ──
     const periodMs = plan.interval === "year" ? 365 * 864e5 : 30 * 864e5;
     const currentPeriodEnd = new Date(Date.now() + periodMs);
-    const sub = await Subscription.findOneAndUpdate(
-      { user: req.userId },
-      {
-        $set: {
-          plan: plan._id,
-          status: "active",
-          currentPeriodEnd,
-          cancelAtPeriodEnd: false,
-          stripeSubscriptionId: `demo_${req.userId}`,
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    const features = plan.features?.length ? plan.features : ["unlimited_swipes", "see_likes"];
-    await Promise.all(
-      features.map((feature) =>
-        Entitlement.updateOne(
-          { user: req.userId, feature },
-          { $set: { source: "subscription", sourceRef: sub._id, expiresAt: null } },
-          { upsert: true }
-        )
-      )
-    );
+    const sub = await syncSubscription({
+      userId: req.userId,
+      plan,
+      status: "active",
+      currentPeriodEnd,
+      cancelAtPeriodEnd: false,
+      stripeSubscriptionId: `demo_${req.userId}`,
+    });
 
     res.json({ ok: true, demo: true, subscription: { status: sub.status, currentPeriodEnd } });
   } catch (e) {
@@ -145,23 +166,32 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
 
 /* ------------------------------------------------------------------
    POST /api/billing/cancel
-   Benefits stay until the period end: cancelAtPeriodEnd=true and the
-   entitlements get an expiry instead of being deleted.
+   혜택은 기간 만료일까지 유지 (cancel_at_period_end).
 ------------------------------------------------------------------ */
 router.post("/cancel", requireAuth, async (req, res, next) => {
   try {
     const sub = await Subscription.findOne({
       user: req.userId,
       status: { $in: ["active", "trialing"] },
-    });
+    }).populate("plan");
     if (!sub) return res.status(404).json({ msg: "No active subscription." });
 
-    sub.cancelAtPeriodEnd = true;
-    await sub.save();
-    await Entitlement.updateMany(
-      { user: req.userId, sourceRef: sub._id },
-      { $set: { expiresAt: sub.currentPeriodEnd || new Date() } }
-    );
+    if (STRIPE_READY && sub.stripeSubscriptionId && !sub.stripeSubscriptionId.startsWith("demo_")) {
+      // Stripe가 정본 — 우리 상태는 웹훅으로 따라온다. 단 UI 즉시 반영을 위해 미리 반영.
+      await stripe().subscriptions.update(sub.stripeSubscriptionId, {
+        cancel_at_period_end: true,
+      });
+    }
+
+    await syncSubscription({
+      userId: req.userId,
+      plan: sub.plan,
+      status: sub.status,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      cancelAtPeriodEnd: true,
+      stripeSubscriptionId: sub.stripeSubscriptionId,
+    });
+
     res.json({ ok: true, cancelAtPeriodEnd: true, currentPeriodEnd: sub.currentPeriodEnd });
   } catch (e) {
     next(e);
@@ -169,21 +199,28 @@ router.post("/cancel", requireAuth, async (req, res, next) => {
 });
 
 /* ------------------------------------------------------------------
-   POST /api/billing/portal — Stripe customer portal (TODO).
+   POST /api/billing/portal — Stripe 고객 포털 (카드 변경·영수증·해지)
 ------------------------------------------------------------------ */
-router.post("/portal", requireAuth, async (_req, res) => {
-  if (!STRIPE_READY) {
-    return res.status(501).json({ msg: "Stripe is not configured on the server." });
+router.post("/portal", requireAuth, async (req, res, next) => {
+  try {
+    if (!STRIPE_READY) {
+      return res.status(501).json({ msg: "Stripe is not configured on the server." });
+    }
+    const sub = await Subscription.findOne({ user: req.userId }).select("stripeCustomerId").lean();
+    if (!sub?.stripeCustomerId) {
+      return res.status(404).json({ msg: "No billing account yet." });
+    }
+    const session = await stripe().billingPortal.sessions.create({
+      customer: sub.stripeCustomerId,
+      return_url: `${APP_URL}/subscription/billing`,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    next(e);
   }
-  return res.status(501).json({ msg: "Customer portal is not wired yet." });
 });
 
-/* ------------------------------------------------------------------
-   POST /api/billing/webhook — Stripe webhook (TODO). Always 2xx so
-   Stripe retries don't pile up before it's wired.
------------------------------------------------------------------- */
-router.post("/webhook", express.raw({ type: "application/json" }), async (_req, res) => {
-  return res.status(200).json({ received: false, reason: "webhook_handler_not_wired" });
-});
+// NOTE: POST /api/billing/webhook 은 server.js에서 express.json() **이전에**
+// express.raw로 마운트된다 (routes/billing-webhook.js). 서명 검증용 원본 바이트 필요.
 
 module.exports = router;

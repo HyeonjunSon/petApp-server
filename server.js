@@ -96,6 +96,14 @@ app.use(corsMw);
 // 모든 경로 프리플라이트 확실 응답(204)  ← ★ 여기서 undefined 참조 없도록 corsMw 사용
 app.options(/.*/, corsMw);
 
+// ⚠️ Stripe 웹훅은 서명 검증에 "원본 바이트"가 필요하다.
+// express.json()이 먼저 파싱하면 검증이 깨지므로 이 한 경로만 raw로 먼저 마운트한다.
+app.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json" }),
+  require("./routes/billing-webhook")
+);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));

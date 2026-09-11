@@ -41,7 +41,7 @@ behind the [web frontend](https://pet-app-frontend-fawn.vercel.app).
 | Matching | like/pass with a daily free limit (402 → paywall), mutual like → match, `GET /matches/likes-me` (premium-gated: free users get `{locked, count}`) |
 | Chat | Socket.IO rooms, delivery acks, read receipts, REST history |
 | Walks | invite lifecycle (proposed→confirmed→completed) with optional map `meetPoint` (GeoJSON); completing a walk auto-creates records for both owners |
-| Billing | plan catalog, checkout, cancel — **demo mode** activates instantly and grants entitlements (`unlimited_swipes`, `see_likes`); Stripe edges are isolated behind `STRIPE_SECRET_KEY` TODOs, same data layer |
+| Billing | **Stripe Checkout + webhook-driven subscription sync** (signature verification, `WebhookLog` idempotency, cancel-at-period-end, customer portal) — falls back to an instant **demo mode** when `STRIPE_SECRET_KEY` is unset, both paths sharing one `syncSubscription()` entitlement rule. See [`docs/STRIPE.md`](docs/STRIPE.md) |
 | Safety | blocks (bidirectional filtering everywhere), reports |
 | Media | Cloudinary uploads (owner/pet photos) |
 
