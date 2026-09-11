@@ -61,13 +61,15 @@ node scripts/seed-demo.js
 ```
 
 **Env:** `MONGODB_URI`, `JWT_SECRET`, `CORS_ORIGINS`, Cloudinary + SMTP creds,
-`DATABASE_URL` (optional, enables analytics), `STRIPE_SECRET_KEY` (optional, future).
+`DATABASE_URL` (optional, enables analytics), `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
+(optional, switches billing from demo to real Stripe — see [`docs/STRIPE.md`](docs/STRIPE.md)).
 
 ## Tests
 
 ```bash
-npm test   # 9 suites / 34 tests — auth, discover, likes gate, blocks, posts,
-           # premium lifecycle (checkout → entitlements → cancel), billing, messaging
+npm test   # 10 suites / 39 tests — auth, discover, likes gate, blocks, posts,
+           # premium lifecycle (checkout → entitlements → cancel), billing,
+           # Stripe webhooks (signature, idempotency, revoke), messaging
 ```
 
 Jest + supertest against `mongodb-memory-server`; analytics logging is automatically
